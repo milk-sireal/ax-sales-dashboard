@@ -13,7 +13,7 @@ export function SourceSettings({ source, onApply, onClose }) {
     if (platformReady && mappingReady(mapping)) onApply({ mapping, platform: platform.trim(), order, pending: false })
   }}>
     <h2>CSV 컬럼 및 플랫폼 확인</h2>
-    <p>필수 열을 연결하고, 플랫폼 열이 없거나 값이 비어 있으면 기본 플랫폼을 지정하세요.</p>
+    <p>필수 열과 고객사 또는 주문번호를 연결하세요. 플랫폼 열이 없거나 값이 비어 있으면 기본 플랫폼을 지정하세요.</p>
     <div className="mapping-grid">
       {Object.entries(integratedLabels).map(([key, label]) => <label key={key}>{label}{required.includes(key) && ' *'}
         <select value={mapping[key]} onChange={(event) => setMapping({ ...mapping, [key]: Number(event.target.value) })}>

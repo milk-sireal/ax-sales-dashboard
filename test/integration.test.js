@@ -83,3 +83,23 @@ test('주문번호가 없는 동일 내역의 파일별 건수 차이는 업로�
     assert.equal(duplicates, 1)
   }
 })
+
+test('쿠팡, 11번가, 네이버 주문 파일을 고객사 열 없이 함께 자동 매핑한다', () => {
+  const files = [
+    source('coupang_sales.csv', 1, '주문일자,주문번호,상품명,구매수량,판매단가,결제금액,주문상태\n2026-03-01,O1,교육,2,"1,000","2,000",구매확정'),
+    source('11st_sales.csv', 2, 'OrderDate,OrderID,Product,Status,Qty,UnitPrice,TotalAmount\n2026/03/01,O1,교육,Cancelled,1,1000,1000'),
+    source('naver_sales.csv', 3, '상품주문번호,결제일,상품명,수량,상품가격,총결제금액,처리상태\nO1,2026.03.01,교육,1,1000,1000,반품환불\nO2,2026.03.02,교육,1,1000,1000,판매완료'),
+  ]
+  assert.ok(files.every(({ pending }) => !pending))
+  const { data, issues, duplicates } = integrateSources(files)
+  assert.equal(issues.length, 0)
+  assert.equal(duplicates, 0)
+  assert.equal(data.length, 4)
+  assert.ok(data.every(({ customer }) => customer === ''))
+  assert.deepEqual(data.map(({ platform, status }) => [platform, status]), [
+    ['쿠팡', 'normal'], ['11번가', 'cancelled'], ['네이버 스마트스토어', 'refunded'], ['네이버 스마트스토어', 'normal'],
+  ])
+  assert.equal(summarize(data).total, 3000)
+  const invalid = source('11st_sales.csv', 4, 'OrderDate,OrderID,Product,TotalAmount\n2026/03/01,,교육,1000')
+  assert.match(integrateSources([invalid]).issues[0].reasons[0], /주문번호 누락/)
+})

@@ -1,18 +1,18 @@
 export const fields = {
-  date: ['날짜', '거래일', '매출일', '거래일자', '판매일', '결제일', '일자', 'date', 'transactiondate', 'salesdate', 'orderdate', 'paymentdate'],
+  date: ['날짜', '주문일자', '거래일', '매출일', '거래일자', '판매일', '결제일', '일자', 'date', 'transactiondate', 'salesdate', 'orderdate', 'paymentdate'],
   customer: ['고객사', '고객', '회사명', '기업명', '거래처', '고객명', 'customer', 'company', 'client', 'customername', 'account'],
   service: ['서비스', '서비스명', '교육과정', '과정명', '교육명', '상품', '상품명', 'service', 'product', 'course', 'program', 'servicename'],
-  quantity: ['수량', '인원', '참가인원', '참여인원', '교육인원', '참가자수', 'quantity', 'qty', 'units', 'participants', 'headcount'],
-  price: ['단가', '교육단가', '인당단가', '1인당금액', 'unitprice', 'price', 'rate', 'priceperperson'],
-  revenue: ['매출액', '매출', '총매출', '결제금액', '합계금액', '공급가액', 'revenue', 'salesamount', 'totalamount'],
+  quantity: ['수량', '구매수량', '인원', '참가인원', '참여인원', '교육인원', '참가자수', 'quantity', 'qty', 'units', 'participants', 'headcount'],
+  price: ['단가', '판매단가', '상품가격', '교육단가', '인당단가', '1인당금액', 'unitprice', 'price', 'rate', 'priceperperson'],
+  revenue: ['매출액', '매출', '총매출', '결제금액', '총결제금액', '합계금액', '공급가액', 'revenue', 'salesamount', 'totalamount'],
 }
 const metadataFields = {
   platform: ['판매 플랫폼', '플랫폼', '채널', '판매채널', '마켓', 'platform', 'salesplatform', 'channel', 'saleschannel', 'marketplace'],
-  orderId: ['주문번호', '주문ID', '거래번호', '거래ID', 'orderid', 'ordernumber', 'orderno', 'transactionid'],
-  status: ['거래 상태', '상태', '주문상태', '결제상태', 'status', 'orderstatus', 'paymentstatus', 'transactionstatus'],
+  orderId: ['주문번호', '상품주문번호', '주문ID', '거래번호', '거래ID', 'orderid', 'ordernumber', 'orderno', 'transactionid'],
+  status: ['거래 상태', '상태', '주문상태', '처리상태', '결제상태', 'status', 'orderstatus', 'paymentstatus', 'transactionstatus'],
 }
 const allFields = { ...fields, ...metadataFields }
-export const required = ['date', 'customer', 'service']
+export const required = ['date', 'service']
 export const labels = Object.fromEntries(Object.entries(fields).map(([key, aliases]) => [key, aliases[0]]))
 export const integratedLabels = { ...labels, ...Object.fromEntries(Object.entries(metadataFields).map(([key, aliases]) => [key, aliases[0]])) }
 const normalize = (value) => value.normalize('NFKC').toLowerCase().replace(/\((?:원|krw)\)|[\s_.-]/g, '')
@@ -98,6 +98,7 @@ export function ambiguousFields(headers) {
 export function mappingReady(mapping) {
   const selected = Object.values(mapping).filter((index) => index >= 0)
   return new Set(selected).size === selected.length && required.every((key) => mapping[key] >= 0)
+    && (mapping.customer >= 0 || mapping.orderId >= 0)
     && (mapping.revenue >= 0 || (mapping.quantity >= 0 && mapping.price >= 0))
 }
 
@@ -141,7 +142,7 @@ export function analyze(document, mapping, order, classify) {
     const reasons = []
     if (cells.length !== document.headers.length) reasons.push('헤더와 열 개수가 다릅니다')
     if (!date) reasons.push(`날짜 확인 필요 (${get('date') || '빈 값'})`)
-    if (!customer) reasons.push('고객사 누락')
+    if (!customer && !get('orderId')) reasons.push('고객사 또는 주문번호 누락')
     if (!service) reasons.push('서비스 누락')
     if (get('quantity') && quantity === null) reasons.push('수량 형식 확인 필요')
     if (get('price') && price === null) reasons.push('단가 형식 확인 필요')

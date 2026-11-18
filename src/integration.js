@@ -5,13 +5,14 @@ const platforms = {
   '네이버 스마트스토어': ['네이버 스마트스토어', '네이버', '스마트스토어', 'naver', 'smartstore', 'naver smartstore'],
   '크몽': ['크몽', 'kmong'],
   '클래스101': ['클래스101', 'class101'],
+  '11번가': ['11번가', '11st', 'eleven street'],
   '쿠팡': ['쿠팡', 'coupang'],
   '카페24': ['카페24', 'cafe24'],
 }
 const statuses = {
-  normal: ['정상', '완료', '정상매출', '결제완료', '구매확정', '거래완료', 'normal', 'paid', 'completed', 'confirmed'],
+  normal: ['정상', '완료', '정상매출', '결제완료', '구매확정', '판매완료', '거래완료', 'normal', 'paid', 'completed', 'confirmed'],
   cancelled: ['취소', '취소완료', '주문취소', '결제취소', 'cancelled', 'canceled'],
-  refunded: ['환불', '환불완료', '전액환불', 'refunded', 'fullrefund', 'refund'],
+  refunded: ['환불', '환불완료', '전액환불', '반품환불', 'refunded', 'fullrefund', 'refund'],
 }
 export const statusLabels = { normal: '정상', cancelled: '취소', refunded: '환불' }
 const nameKey = (value) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase()
