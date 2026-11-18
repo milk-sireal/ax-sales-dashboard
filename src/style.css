@@ -148,3 +148,33 @@ td.customer, td.revenue { color: #22334f; font-weight: 700; }
   .search input { width: 118px; }
 }
 @media (max-width: 390px) { .breadcrumb > span { display: none; } .workspace-mark b { display: none; } }
+
+.source-list { margin: 6px 0 12px; }
+.source-list > div + div { border-top: 1px solid #e7edf5; }
+.pending-badge { color: #754708; background: #fff1d2; white-space: nowrap; border-radius: 5px; font-size: 10px; font-weight: 700; padding: 3px 6px; }
+.settings-actions { display: flex; gap: 8px; }
+.mapping input, .filter-fields select, .filter-fields input { width: 100%; min-width: 0; border: 1px solid #dce5f0; border-radius: 6px; padding: 8px; background: #f8faff; font-size: 12px; color: #20304c; }
+.mapping input { display: block; margin-top: 5px; }
+.filter-panel { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 13px 20px; margin-top: 12px; padding: 14px 18px; }
+.filter-panel p { font-size: 12px; margin-top: 4px; }
+.filter-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.filter-fields label { display: grid; gap: 4px; min-width: 123px; font-size: 11px; font-weight: 650; color: #53647d; }
+.filter-fields label:first-child { max-width: 200px; }
+.filter-panel .range-error { width: 100%; color: #9e2738; }
+.aggregation-note { margin-top: 10px; border-left: 2px solid #b6caf8; padding-left: 10px; font-size: 12px; line-height: 1.6; }
+.aggregation-note b { color: #405779; }
+.platform-bar { max-height: 280px; overflow: auto; margin-top: 10px; }
+.scroll-legend { max-height: 205px; overflow-y: auto; padding-right: 4px; }
+table { min-width: 890px; }
+td:nth-child(n+7) { text-align: left; }
+th:nth-child(n+7) button { justify-content: flex-start; }
+.transaction-status { display: inline-block; padding: 3px 7px; border-radius: 5px; font-weight: 650; }
+.transaction-status.normal { color: #17624e; background: #e7f7f1; }
+.transaction-status.cancelled { color: #805312; background: #fff2d9; }
+.transaction-status.refunded { color: #853e78; background: #faeff9; }
+@media (max-width: 420px) {
+  .filter-fields { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .filter-fields label { min-width: 0; }
+  .filter-fields label:first-child { grid-column: 1 / -1; max-width: none; }
+  .filter-fields button { justify-self: start; }
+}

@@ -6,8 +6,15 @@ export const fields = {
   price: ['단가', '교육단가', '인당단가', '1인당금액', 'unitprice', 'price', 'rate', 'priceperperson'],
   revenue: ['매출액', '매출', '총매출', '결제금액', '합계금액', '공급가액', 'revenue', 'salesamount', 'totalamount'],
 }
+const metadataFields = {
+  platform: ['판매 플랫폼', '플랫폼', '채널', '판매채널', '마켓', 'platform', 'salesplatform', 'channel', 'saleschannel', 'marketplace'],
+  orderId: ['주문번호', '주문ID', '거래번호', '거래ID', 'orderid', 'ordernumber', 'orderno', 'transactionid'],
+  status: ['거래 상태', '상태', '주문상태', '결제상태', 'status', 'orderstatus', 'paymentstatus', 'transactionstatus'],
+}
+const allFields = { ...fields, ...metadataFields }
 export const required = ['date', 'customer', 'service']
 export const labels = Object.fromEntries(Object.entries(fields).map(([key, aliases]) => [key, aliases[0]]))
+export const integratedLabels = { ...labels, ...Object.fromEntries(Object.entries(metadataFields).map(([key, aliases]) => [key, aliases[0]])) }
 const normalize = (value) => value.normalize('NFKC').toLowerCase().replace(/\((?:원|krw)\)|[\s_.-]/g, '')
 
 export function parseCsv(text, delimiter) {
@@ -61,7 +68,7 @@ export function readCsv(bytes) {
     try {
       const [header, ...rows] = parseCsv(text, delimiter)
       if (!header || header.cells.length < 2) continue
-      const hits = header.cells.filter((name) => Object.values(fields).some((aliases) => aliases.map(normalize).includes(normalize(name)))).length
+      const hits = header.cells.filter((name) => Object.values(allFields).some((aliases) => aliases.map(normalize).includes(normalize(name)))).length
       const matches = rows.filter(({ cells }) => cells.length === header.cells.length).length
       candidates.push({ headers: header.cells, rows, hits, matches })
     } catch (error) { errors.push(error) }
@@ -74,11 +81,18 @@ export function readCsv(bytes) {
 }
 
 export function inferMapping(headers) {
-  return Object.fromEntries(Object.entries(fields).map(([key, aliases]) => {
+  return Object.fromEntries(Object.entries(allFields).map(([key, aliases]) => {
     const names = aliases.map(normalize)
     const matches = headers.flatMap((header, index) => names.includes(normalize(header)) ? [index] : [])
     return [key, matches.length === 1 ? matches[0] : -1]
   }))
+}
+
+export function ambiguousFields(headers) {
+  return Object.entries(allFields).filter(([, aliases]) => {
+    const names = aliases.map(normalize)
+    return headers.filter((header) => names.includes(normalize(header))).length > 1
+  }).map(([key]) => key)
 }
 
 export function mappingReady(mapping) {
@@ -115,7 +129,7 @@ export function parseNumber(value) {
   return Number.isFinite(number) && Math.abs(number) <= Number.MAX_SAFE_INTEGER ? number : null
 }
 
-export function analyze(document, mapping, order) {
+export function analyze(document, mapping, order, classify) {
   const data = [], issues = []
   for (const { cells, line } of document.rows) {
     const get = (key) => cells[mapping[key]] ?? ''
@@ -132,8 +146,9 @@ export function analyze(document, mapping, order) {
     if (get('quantity') && quantity === null) reasons.push('수량 형식 확인 필요')
     if (get('price') && price === null) reasons.push('단가 형식 확인 필요')
     if (revenue === null || !Number.isFinite(revenue) || Math.abs(revenue) > Number.MAX_SAFE_INTEGER) reasons.push('매출액 또는 수량·단가 확인 필요')
+    const metadata = classify?.(get, revenue, reasons)
     if (reasons.length) issues.push({ line, reasons })
-    else data.push({ date, customer, service, quantity, price, revenue, calculated, line })
+    else data.push({ date, customer, service, quantity, price, revenue, calculated, line, ...metadata })
   }
   return { data, issues }
 }

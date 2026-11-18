@@ -1,9 +1,11 @@
 import React, { lazy, Suspense, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Activity, ArrowDown, ArrowDownUp, ArrowLeft, ArrowRight, ArrowUp, BarChart3, CalendarDays, ChevronDown, CircleAlert, CloudUpload, Database, Download, FileSpreadsheet, LayoutDashboard, Menu, Search, ShieldCheck, Wallet, ReceiptText, X } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownUp, ArrowLeft, ArrowRight, ArrowUp, BarChart3, CalendarDays, ChevronDown, CircleAlert, CloudUpload, Database, Download, LayoutDashboard, Menu, Search, ShieldCheck, Wallet, ReceiptText, X } from 'lucide-react'
 import { Button } from './components/button.jsx'
-import { analyze, inferMapping, labels, mappingReady, readCsv, required, toCsv } from './csv.js'
-import { samples } from './samples.js'
+import { integratedLabels as labels, readCsv, toCsv } from './csv.js'
+import { integrateSources, platformTotals, prepareSource, selectRows, statusLabels, summarize } from './integration.js'
+import { SourceList } from './components/source-settings.jsx'
+import { integrationSamples, samples } from './samples.js'
 import { amount, won } from './format.js'
 import './style.css'
 
@@ -21,27 +23,30 @@ function download(name, csv) {
 }
 
 function App() {
-  const [source, setSource] = useState({ document: sampleDocument, name: samples[0].file, demo: true })
-  const [mapping, setMapping] = useState(() => inferMapping(sampleDocument.headers))
-  const [showMapping, setShowMapping] = useState(false)
-  const [order, setOrder] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [sources, setSources] = useState(() => [prepareSource(sampleDocument, samples[0].file, 0, true)])
+  const [editing, setEditing] = useState(null)
+  const [errors, setErrors] = useState([])
+  const [pendingUploads, setPendingUploads] = useState(0)
+  const [platform, setPlatform] = useState('')
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
   const [dragging, setDragging] = useState(false)
   const [menu, setMenu] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState({ key: 'date', direction: -1 })
   const [page, setPage] = useState(0)
-  const input = useRef(null), uploadVersion = useRef(0)
-  const ready = source && mappingReady(mapping) && !showMapping
-  const { data, issues } = useMemo(() => ready ? analyze(source.document, mapping, order) : { data: [], issues: [] }, [ready, source, mapping, order])
-  const total = data.reduce((sum, row) => sum + row.revenue, 0)
-  const calculatedCount = data.filter((row) => row.calculated).length
+  const input = useRef(null), nextSourceId = useRef(1), uploadQueue = useRef(Promise.resolve())
+  const integration = useMemo(() => integrateSources(sources), [sources])
+  const selectedPlatform = integration.platforms.includes(platform) ? platform : ''
+  const invalidRange = Boolean(start && end && start > end)
+  const data = useMemo(() => invalidRange ? [] : selectRows(integration.data, { platform: selectedPlatform, start, end }), [integration.data, invalidRange, selectedPlatform, start, end])
+  const { normal, total, cancelled, refunds, refundAmount } = useMemo(() => summarize(data), [data])
+  const byPlatform = useMemo(() => platformTotals(data), [data])
   const dates = useMemo(() => data.map((row) => row.date).sort(), [data])
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
-    return data.filter((row) => [row.date, row.customer, row.service, amount(row.revenue)].some((value) => value.toLowerCase().includes(query)))
+    return data.filter((row) => [row.date, row.customer, row.service, row.platform, row.orderId, statusLabels[row.status], amount(row.revenue)].some((value) => value.toLowerCase().includes(query)))
       .sort((a, b) => {
         const left = a[sort.key], right = b[sort.key]
         if (left == null || right == null) return (left == null) - (right == null)
@@ -52,41 +57,42 @@ function App() {
   const currentPage = Math.min(page, pages - 1)
   const visible = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
 
-  async function load(file) {
-    if (!file) return
-    const version = ++uploadVersion.current
-    setLoading(true)
-    setError('')
-    try {
-      if (file.size > 20 * 1024 * 1024) throw new Error('20MB 이하의 CSV 파일을 선택해 주세요.')
-      const document = readCsv(await file.arrayBuffer())
-      if (version !== uploadVersion.current) return
-      const next = inferMapping(document.headers)
-      setSource({ document, name: file.name, demo: false })
-      setMapping(next)
-      setOrder('')
-      setSearch('')
-      setPage(0)
-      setShowMapping(!mappingReady(next))
-    } catch (exception) {
-      if (version !== uploadVersion.current) return
-      setError(exception.message)
-    } finally {
-      if (version === uploadVersion.current) setLoading(false)
-    }
+  function load(files) {
+    if (!files.length) return
+    setPendingUploads((count) => count + files.length)
+    uploadQueue.current = uploadQueue.current.then(async () => {
+      const added = [], failures = []
+      for (const file of files) {
+        try {
+          if (file.size > 20 * 1024 * 1024) throw new Error('20MB 이하의 CSV 파일을 선택해 주세요.')
+          const document = readCsv(await file.arrayBuffer())
+          added.push(prepareSource(document, file.name, nextSourceId.current++))
+        } catch (error) {
+          failures.push(`${file.name} · ${error.message}`)
+        }
+      }
+      if (added.length) {
+        setSources((current) => [...current.filter((source) => !source.demo), ...added])
+        const firstPending = added.find((source) => source.pending)
+        if (firstPending) setEditing((current) => current || firstPending.id)
+        setPage(0)
+      }
+      setErrors((current) => [...current, ...failures])
+      setPendingUploads((count) => count - files.length)
+    })
   }
 
-  function clear() {
-    uploadVersion.current++
-    setLoading(false)
-    setSource(null)
-    setError('')
-    setShowMapping(false)
+  function changeFilter(setter, value) {
+    setter(value)
+    setPage(0)
   }
 
   function exportData() {
     const columns = Object.keys(labels)
-    download('ax-sales-normalized.csv', toCsv([columns.map((key) => labels[key]), ...data.map((row) => columns.map((key) => row[key]))]))
+    download('ax-sales-integrated.csv', toCsv([
+      columns.map((key) => labels[key]),
+      ...data.map((row) => columns.map((key) => key === 'status' ? statusLabels[row.status] : row[key])),
+    ]))
   }
 
   return <div className="app">
@@ -118,47 +124,59 @@ function App() {
           onDrop={(event) => {
             event.preventDefault()
             setDragging(false)
-            if (event.dataTransfer.files.length > 1) { setError('CSV 파일을 한 번에 하나씩 업로드해 주세요.'); return }
-            load(event.dataTransfer.files[0])
+            load(Array.from(event.dataTransfer.files))
           }}>
-          <input ref={input} type="file" accept=".csv,.tsv,text/csv" hidden aria-label="CSV 파일 선택" onChange={(event) => { load(event.target.files[0]); event.target.value = '' }}/>
-          <div className="upload-copy"><span className="upload-icon"><CloudUpload size={24}/></span><div><h2>CSV 데이터 업로드</h2><p>파일을 끌어다 놓거나 선택하면 매출 데이터를 자동으로 분석합니다.</p></div></div>
+          <input ref={input} type="file" multiple accept=".csv,.tsv,text/csv" hidden aria-label="CSV 파일 선택" onChange={(event) => { load(Array.from(event.target.files)); event.target.value = '' }}/>
+          <div className="upload-copy"><span className="upload-icon"><CloudUpload size={24}/></span><div><h2>CSV 데이터 업로드</h2><p>여러 파일을 끌어다 놓거나 선택해 매출 데이터를 통합하세요.</p></div></div>
           <div className="upload-actions">
             <div className="sample-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setMenu(false) }} onKeyDown={(event) => { if (event.key === 'Escape') { setMenu(false); event.currentTarget.querySelector('button').focus() } }}>
               <Button variant="outline" aria-expanded={menu} onClick={() => setMenu(!menu)}><Download size={16}/>샘플 CSV<ChevronDown size={14}/></Button>
-              {menu && <div className="dropdown">{samples.map((sample) => <button key={sample.file} onClick={() => { download(sample.file, sample.csv); setMenu(false) }}>{sample.name}</button>)}</div>}
+              {menu && <div className="dropdown">{[...samples, ...integrationSamples].map((sample) => <button key={sample.file} onClick={() => { download(sample.file, sample.csv); setMenu(false) }}>{sample.name}</button>)}</div>}
             </div>
-            <Button onClick={() => input.current.click()} disabled={loading}><CloudUpload size={17}/>{loading ? '분석 중…' : '파일 선택'}</Button>
+            <Button onClick={() => input.current.click()} disabled={pendingUploads > 0}><CloudUpload size={17}/>{pendingUploads ? '분석 중…' : '파일 선택'}</Button>
           </div>
         </section>
-        {error && <div className="notice error" role="alert"><CircleAlert size={19}/><div><b>CSV 업로드 오류</b><p>{error}{source && ' 이전 파일을 계속 표시합니다.'}</p></div><button aria-label="오류 닫기" onClick={() => setError('')}><X size={18}/></button></div>}
-        {source && <div className="file-status">
-          <FileSpreadsheet size={16}/><span className="file-name">{source.name}</span>
-          {source.demo && <span className="sample-badge">샘플 데이터</span>}
-          {ready && <span className="file-count">{amount(data.length)}건 분석{calculatedCount > 0 && ` · ${calculatedCount}건 매출액 계산`}</span>}
-          <div className="file-tools"><button onClick={() => setShowMapping(!showMapping)}>{showMapping ? '매핑 접기' : '컬럼 설정'}</button><button onClick={clear} aria-label="데이터 지우기"><X size={16}/></button></div>
-        </div>}
-        {source && (showMapping || !mappingReady(mapping)) && <section className="card mapping">
-          <h2>CSV 컬럼 확인</h2><p>날짜, 고객사, 서비스와 매출액에 해당하는 열을 선택하세요. 매출액 열이 없으면 수량과 단가를 모두 선택하세요.</p>
-          <div className="mapping-grid">{Object.entries(labels).map(([key, label]) => <label key={key}>{label}{required.includes(key) && ' *'}<select value={mapping[key]} onChange={(event) => setMapping({ ...mapping, [key]: Number(event.target.value) })}><option value={-1}>선택 안 함</option>{source.document.headers.map((header, index) => <option key={index} value={index}>{index + 1}열 · {header || '이름 없음'}</option>)}</select></label>)}
-          <label>연도가 마지막인 날짜<select value={order} onChange={(event) => setOrder(event.target.value)}><option value="">모호한 값 확인 필요</option><option value="dmy">일 / 월 / 연도</option><option value="mdy">월 / 일 / 연도</option></select></label></div>
-          <Button disabled={!mappingReady(mapping)} onClick={() => { setPage(0); setShowMapping(false) }}>매핑 적용</Button>
-        </section>}
-        {issues.length > 0 && <details className="notice issue"><summary><CircleAlert size={18}/>확인이 필요한 데이터 {issues.length}건<ChevronDown size={16}/></summary><p>아래 행은 분석과 내보내기에서 제외됩니다. 컬럼 및 날짜 설정을 확인하거나 원본 값을 수정해 다시 업로드하세요.</p><ul>{issues.map(({line, reasons}) => <li key={line}>{line}행 · {reasons.join(' / ')}</li>)}</ul></details>}
+        {errors.length > 0 && <div className="notice error" role="alert"><CircleAlert size={19}/><div><b>CSV 업로드 오류</b>{errors.map((error, index) => <p key={index}>{error}</p>)}</div><button aria-label="오류 닫기" onClick={() => setErrors([])}><X size={18}/></button></div>}
+        <SourceList sources={sources} editing={editing} setEditing={setEditing}
+          onApply={(id, settings) => {
+            setSources((current) => current.map((source) => source.id === id ? { ...source, ...settings } : source))
+            setEditing(null)
+            setPage(0)
+          }}
+          onRemove={(id) => {
+            setSources((current) => current.filter((source) => source.id !== id))
+            if (editing === id) setEditing(null)
+            setPage(0)
+          }}/>
+        {integration.issues.length > 0 && <details className="notice issue"><summary><CircleAlert size={18}/>확인이 필요한 데이터 {integration.issues.length}건<ChevronDown size={16}/></summary><p>아래 행은 집계와 내보내기에서 제외됩니다. 파일 설정 또는 원본을 확인하세요.</p><ul>{integration.issues.map(({sourceId, sourceName, line, reasons}) => <li key={`${sourceId}:${line}`}>{sourceName} · {line}행 · {reasons.join(' / ')}</li>)}</ul></details>}
+        <section className="card filter-panel" aria-label="매출 필터">
+          <div><h2>매출 필터</h2><p>플랫폼과 조회 기간을 선택하세요.</p></div>
+          <div className="filter-fields">
+            <label>판매 플랫폼<select value={selectedPlatform} onChange={(event) => changeFilter(setPlatform, event.target.value)}><option value="">전체 플랫폼</option>{integration.platforms.map((name) => <option key={name}>{name}</option>)}</select></label>
+            <label>조회 시작일<input type="date" value={start} onChange={(event) => changeFilter(setStart, event.target.value)}/></label>
+            <label>조회 종료일<input type="date" value={end} onChange={(event) => changeFilter(setEnd, event.target.value)}/></label>
+            <Button variant="outline" onClick={() => { setPlatform(''); setStart(''); setEnd(''); setPage(0) }} disabled={!selectedPlatform && !start && !end}>필터 초기화</Button>
+          </div>
+          {invalidRange && <p role="alert" className="range-error">조회 종료일은 시작일과 같거나 이후여야 합니다.</p>}
+        </section>
         <section className="overview" aria-label="매출 요약">
-          <div className="section-title"><h2>매출 요약</h2><span><i/> {source?.demo ? '샘플 분석' : ready ? 'CSV 분석' : '데이터 대기'}</span></div>
+          <div className="section-title"><h2>매출 요약</h2><span><i/> {sources.some((source) => source.demo) ? '샘플 분석' : integration.data.length ? 'CSV 통합 분석' : '데이터 대기'}</span></div>
           <div className="metrics">
-            {[['총매출', data.length ? won(total) : '–', '분석 기간의 전체 매출액', Wallet, 'blue'], ['거래 건수', data.length ? `${amount(data.length)}건` : '–', '분석에 포함된 거래 수', ReceiptText, 'violet'], ['평균 거래액', data.length ? won(total / data.length) : '–', '전체 매출액 ÷ 거래 건수', Activity, 'teal']].map(([title, value, description, Icon, tone]) => <article className="card metric" key={title}><div><h3>{title}</h3><strong>{value}</strong><p>{description}</p></div><span className={`metric-icon ${tone}`}><Icon size={21}/></span></article>)}
+            {[['총매출', data.length ? won(total) : '–', '정상 거래의 매출액 합계', Wallet, 'blue'], ['거래 건수', data.length ? `${amount(normal.length)}건` : '–', '정상 거래 수', ReceiptText, 'violet'], ['평균 거래액', normal.length ? won(total / normal.length) : '–', '정상 매출액 ÷ 정상 거래 수', Activity, 'teal']].map(([title, value, description, Icon, tone]) => <article className="card metric" key={title}><div><h3>{title}</h3><strong>{value}</strong><p>{description}</p></div><span className={`metric-icon ${tone}`}><Icon size={21}/></span></article>)}
+          </div>
+          <div className="aggregation-note">
+            <p>총매출과 차트는 정상 거래 기준입니다. 취소·환불은 원금에서 차감하지 않고 상세 표와 CSV에 별도 상태로 표시합니다.</p>
+            <p><b>취소 {amount(cancelled)}건</b> · <b>환불 {amount(refunds)}건 ({won(refundAmount)})</b>{(integration.duplicates > 0 || integration.superseded > 0) && <span> · 전체 파일 중복 제외 {amount(integration.duplicates)}건 · 취소·환불로 대체 {amount(integration.superseded)}건</span>}</p>
           </div>
         </section>
-        <Suspense fallback={<div className="chart-empty" role="status">차트를 불러오는 중입니다.</div>}><Charts data={data} total={total}/></Suspense>
+        <Suspense fallback={<div className="chart-empty" role="status">차트를 불러오는 중입니다.</div>}><Charts data={normal} total={total} byPlatform={byPlatform}/></Suspense>
         <section className="card table-card" id="transactions">
-          <div className="table-heading"><div><h2>상세 매출 내역</h2><p>거래별 매출 데이터를 검색하고 확인하세요.</p></div><div className="table-actions"><label className="search"><Search size={17}/><input type="search" placeholder="고객사, 서비스 검색" aria-label="상세 매출 검색" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }}/></label><Button variant="outline" disabled={!data.length} onClick={exportData}><Download size={16}/>CSV 다운로드</Button></div></div>
+          <div className="table-heading"><div><h2>상세 매출 내역</h2><p>거래별 매출 데이터를 검색하고 확인하세요.</p></div><div className="table-actions"><label className="search"><Search size={17}/><input type="search" placeholder="고객사, 플랫폼, 주문 검색" aria-label="상세 매출 검색" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }}/></label><Button variant="outline" disabled={!data.length} onClick={exportData}><Download size={16}/>CSV 다운로드</Button></div></div>
           <div className="table-scroll"><table><thead><tr>{Object.entries(labels).map(([key, label]) => {
             const Icon = sort.key === key ? sort.direction === 1 ? ArrowUp : ArrowDown : ArrowDownUp
             return <th key={key} scope="col" aria-sort={sort.key === key ? sort.direction === 1 ? 'ascending' : 'descending' : 'none'}><button onClick={() => { setSort({ key, direction: sort.key === key ? -sort.direction : 1 }); setPage(0) }}>{label}<Icon size={13}/></button></th>
-          })}</tr></thead><tbody>{visible.map((row) => <tr key={row.line}><td>{row.date}</td><td className="customer">{row.customer}</td><td><span className="service-tag">{row.service}</span></td><td>{amount(row.quantity)}</td><td>{row.price == null ? '–' : won(row.price)}</td><td className="revenue">{won(row.revenue)}</td></tr>)}
-          {!visible.length && <tr><td colSpan={6}><div className="table-empty"><Database size={24}/>{search && data.length ? '검색 조건에 맞는 거래가 없습니다.' : '표시할 거래가 없습니다. CSV 파일을 업로드하거나 컬럼 설정을 확인하세요.'}</div></td></tr>}</tbody></table></div>
+          })}</tr></thead><tbody>{visible.map((row) => <tr key={`${row.sourceId}:${row.line}`}><td>{row.date}</td><td className="customer">{row.customer}</td><td><span className="service-tag">{row.service}</span></td><td>{amount(row.quantity)}</td><td>{row.price == null ? '–' : won(row.price)}</td><td className="revenue">{won(row.revenue)}</td><td>{row.platform}</td><td>{row.orderId || '–'}</td><td><span className={`transaction-status ${row.status}`}>{statusLabels[row.status]}</span></td></tr>)}
+          {!visible.length && <tr><td colSpan={Object.keys(labels).length}><div className="table-empty"><Database size={24}/>{search && data.length ? '검색 조건에 맞는 거래가 없습니다.' : '표시할 거래가 없습니다. CSV 파일, 컬럼 설정 또는 필터를 확인하세요.'}</div></td></tr>}</tbody></table></div>
           <div className="table-footer"><span>{filtered.length ? `${currentPage * pageSize + 1}–${Math.min((currentPage + 1) * pageSize, filtered.length)} / ${amount(filtered.length)}건` : '0건'}</span><div><Button variant="outline" aria-label="이전 페이지" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}><ArrowLeft size={15}/></Button><span>{currentPage + 1} / {pages}</span><Button variant="outline" aria-label="다음 페이지" disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}><ArrowRight size={15}/></Button></div></div>
         </section>
       </div>

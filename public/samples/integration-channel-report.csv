@@ -1,0 +1,4 @@
+﻿Channel;Order ID;Client;Program;Sales Amount;Payment Date;Status
+Naver;N-001;가상 모티브웍스;기업 AX 워크숍;200,000 KRW;2026/03/01;Paid
+Naver;N-002;가상 루멘피크;생성형 AI 실무;-300,000 KRW;2026/03/04;Refunded
+Kmong;N-001;가상 노바플로우;AX 컨설팅;450,000 KRW;2026/04/01;Completed
