@@ -1,0 +1,40 @@
+{
+  "name": "ax-sales-dashboard",
+  "version": "1.0.0",
+  "description": "여러 CSV 파일을 업로드하면 매출 데이터를 자동으로 정리하고, 차트와 표로 보여주는 매출 분석 대시보드",
+  "scripts": {
+    "test": "node --test",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/milk-sireal/ax-sales-dashboard.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/milk-sireal/ax-sales-dashboard/issues"
+  },
+  "homepage": "https://github.com/milk-sireal/ax-sales-dashboard#readme",
+  "private": true,
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.5.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.75.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.11.0",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@vitejs/plugin-react": "^6.3.0",
+    "tailwindcss": "^4.3.5",
+    "vite": "^8.3.8"
+  }
+}
